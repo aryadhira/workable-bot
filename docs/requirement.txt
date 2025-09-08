@@ -1,0 +1,81 @@
+Task:
+Automate a Workable job application end-to-end.
+Scope:
+Create a bot that can apply to these jobs:
+
+    https://jobs.workable.com/view/nh3yzcd2jraDf2Ki7Gj2y7/customer-service-engineer-(system-administrator)-(esom)-in-lexington-at-kentro
+
+    https://jobs.workable.com/view/6WYWj7iSEUTdgMfJERMvTF/selling-assistant-manager-in-greensboro-at-1915-south-%2F-ashley
+
+    https://jobs.workable.com/view/xi5U92QV4yBxjaHrwLZYcF/hybrid-senior-technical-lead---front-end-in-texas-at-qode
+
+
+Acceptance Criteria:
+
+    - Navigate to the Job Application Page:
+
+        Access the specific job application URL
+
+        click “apply now” button
+
+    - Application page:
+
+        Upload the resume file (try the autofill upload field)
+
+        Extract Information:
+
+            Identify all required fields dynamically
+
+            Extract questions or labels for each required field.
+
+            Extract options for fields with multiple choices (dropdowns, radio buttons, checkboxes…).
+
+        Handle Different Types of Fields:
+
+            Text input
+
+            number input
+
+            Dropdown
+
+            Location
+
+            Phone number
+
+            Radio Buttons
+
+            Checkboxes
+
+            Text Area
+
+            File input
+
+        Answer the form questions  - input : Resume in attachment
+        If a required information isn’t in the resume, feel free to use dummy values to complete the form
+
+        Populate Fields:
+
+            Populate required fields with the answers 
+
+    - Locate the “SUBMIT” Button:
+
+        Identify the “SUBMIT APPLICATION” button
+
+        Click the “SUBMIT APPLICATION” button
+
+    - Captcha Handling:
+
+        Solve the Captcha
+
+        Successfully submit the application
+
+    - Logs:
+
+        Display logs during the applications
+
+
+Deliverables:
+
+    GitHub repo with:
+        All source code for the bot (Playwright or Selenium)
+        README.md - setup & run instructions
