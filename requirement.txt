@@ -1,3 +1,5 @@
 pdfplumber
 beautifulsoup4
 pytest-playwright
+openai
+python-dotenv
