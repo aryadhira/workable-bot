@@ -2,13 +2,14 @@ from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
 class JobApplicationBot:
-    def __init__(self, url, headless):
+    def __init__(self, url, headless, resume):
         self.url = url
-        # self.playwright = sync_playwright().start()
-        # self.browser = self.playwright.chromium.launch(
-        #     headless=headless,
-        #     slow_mo=2000
-        # )
+        self.resume = resume
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(
+            headless=headless,
+            slow_mo=3000
+        )
 
     def fillApplicationForm(self):
         page = self.browser.new_page()
@@ -26,12 +27,22 @@ class JobApplicationBot:
 
         dialogHtml = dialogContainer.inner_html()
 
+        print("Populating All Required Fields ...")
+        formFields = self.getRequiredFields(dialogHtml)
+        
+        for i in range(len(formFields)):
+            selector = formFields[i]["Selector"]
+            if formFields[i]["InputType"] == "text" or formFields[i]["InputType"] == "email":
+                label = formFields[i]["Label"]
+                value = self.resume[label]
+                formLocation = page.locator(f"input{selector}")
+                formLocation.fill(value)
+            elif formFields[i]["InputType"] == "file":
+                page.set_input_files(selector, "docs/Kenneth.pdf")
+                page.wait_for_timeout(2000)
         
 
-    def getRequiredFields(self):
-        sourceFile = open("source.txt", "r")
-        source = sourceFile.read()
-
+    def getRequiredFields(self, source):
         soup = BeautifulSoup(source, 'html.parser')
         requiredIndicators = soup.find_all('strong', class_='styles__strong--2kqW6', string='*')
 
@@ -61,17 +72,35 @@ class JobApplicationBot:
                             inputType = "checkbox"
                     case _:
                         inputType = inputElement
+            selector = None
+            if inputElement.get('id'):
+                selector = f"#{inputElement['id']}"
+            elif inputElement.get('data-ui'):
+                selector = f"[data-ui='{inputElement['data-ui']}']"
+            elif inputElement.get('name'):
+                selector = f"[name='{inputElement['name']}']"
             
             formField = {
                 "Label" : requiredLabelText,
                 "InputType": inputType,
-                "InputElement": inputElement
+                "Selector": selector,
+
             }
 
             requireFormFields.append(formField)
 
         return requireFormFields
-            
+    
+    def getPhoneDropdown(self, source):
+        soup = BeautifulSoup(source, 'html.parser')
+        dialCodeOptions = soup.find_all('span', class_='iti__dial-code')
+        dialCodes = []
+
+        for option in dialCodeOptions:
+            dialCodes.append(option.text)
+
+        return dialCodes    
+    
 
 
 

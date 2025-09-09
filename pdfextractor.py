@@ -1,5 +1,6 @@
 import pdfplumber
 import re
+from datetime import datetime, timedelta
 
 class PdfExtractor:
     def __init__(self, path):
@@ -17,6 +18,9 @@ class PdfExtractor:
                     text = page.extract_text()
                     content += text
             nameSection = biodata[0]['text']
+            nameParts = nameSection.split(" ")
+            firstName = nameParts[0]
+            lastName = nameParts[1]
             identity = biodata[1]['text']
             identityParts = identity.split("|")
     
@@ -26,9 +30,12 @@ class PdfExtractor:
             educationSection = self.findSection(content,"EDUCATION")
             projectSection = self.findSection(content,"PROJECTS & HACKATHONS")
             certificationsSection = self.findSection(content,"CERTIFICATIONS")
+            joinTime = datetime.now()+timedelta(days=7)
+            joinTimeStr = joinTime.strftime("%d %B, %Y")
 
             pdfContent = {
-                "Name": nameSection,
+                "First name": firstName,
+                "Last name": lastName,
                 "Address": identityParts[0].strip(),
                 "Email": identityParts[1].strip(),
                 "Phone": identityParts[2].strip(),
@@ -37,7 +44,9 @@ class PdfExtractor:
                 "Experience": experienceSection,
                 "Education": educationSection,
                 "Project": projectSection,
-                "Certification": certificationsSection
+                "Certification": certificationsSection,
+                "Available start date": joinTimeStr,
+                "Current level of clearance": "Public Trust"
             }
 
             return pdfContent
