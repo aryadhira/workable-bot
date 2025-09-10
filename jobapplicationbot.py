@@ -2,6 +2,7 @@ from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import time
 import os
+import re
 
 class JobApplicationBot:
     def __init__(self, pw, url, headless, resume, llm):
@@ -173,6 +174,7 @@ class JobApplicationBot:
     def fillForm(self):
         browser = self.playwright.chromium.launch(
                 headless= self.headless,
+                slow_mo= 500
             )
         try:
             page = browser.new_page()
@@ -266,16 +268,34 @@ class JobApplicationBot:
                     print(f"Answering: {label}")
                     page.locator(f"input{selector}").click()
 
-            # print("Submit Application ...")
-            # page.locator("button[data-ui='apply-button']").click()
+            print("Submit Application ...")
+            page.locator("button[data-ui='apply-button']").click()
 
-            time.sleep(5)
+            time.sleep(20)
+
+            content = page.content()
+            siteKey = self.getTurnstileWidgetSiteKey(content)
+            print(siteKey)
 
         except RuntimeError as e:
             print(f"Failed to fill the form: {e}")
         
-        finally:
-            browser.close()
+        # finally:
+        #     browser.close()
+
+    def getTurnstileWidgetSiteKey(self, source):
+        soup = BeautifulSoup(source, 'html.parser')
+
+        res = soup.find_all("script")
+
+        siteKey = None
+        for script in res:
+            if script.string:
+                match = re.search(r'"turnstileWidgetSiteKey"\s*:\s*"([^"]+)"', script.string)
+                if match:
+                    siteKey = match.group(1)
+                    break
+        return siteKey
 
                     
                     

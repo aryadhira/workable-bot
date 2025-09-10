@@ -29,9 +29,13 @@ def main():
         "https://jobs.workable.com/view/xi5U92QV4yBxjaHrwLZYcF/hybrid-senior-technical-lead---front-end-in-texas-at-qode"
     ]
 
+    # source = open("form.txt","r")
+
     for url in urls:
         bot = JobApplicationBot(pw, url, False, pdfcontent, llmClient)
         bot.fillForm()
+        print("-----------------------------------------------------------------")
+        # bot.getTurnstileWidgetSiteKey(source.read())
 
 
 if __name__ == "__main__":
