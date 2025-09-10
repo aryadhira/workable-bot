@@ -4,20 +4,17 @@ import time
 import os
 
 class JobApplicationBot:
-    def __init__(self, url, headless, resume, llm):
+    def __init__(self, pw, url, headless, resume, llm):
         self.url = url
         self.resume = resume
         self.llm = llm
+        self.headless = headless
         summaryContentRaw = ""
         for key,value in self.resume.items():
             summaryContentRaw += f"{key}: {value}\n"
         
         self.rawSummary = summaryContentRaw
-        self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(
-            headless=headless,
-            slow_mo=2000
-        )
+        self.playwright = pw
     
     # For scrapping on dev purpose only
     def dumpSource(self, name):
@@ -174,8 +171,11 @@ class JobApplicationBot:
         return requireFields
     
     def fillForm(self):
+        browser = self.playwright.chromium.launch(
+                headless= self.headless,
+            )
         try:
-            page = self.browser.new_page()
+            page = browser.new_page()
             print(f'Navigating to {self.url} ...')
             page.goto(self.url)
 
@@ -266,9 +266,17 @@ class JobApplicationBot:
                     print(f"Answering: {label}")
                     page.locator(f"input{selector}").click()
 
+            # print("Submit Application ...")
+            # page.locator("button[data-ui='apply-button']").click()
+
+            time.sleep(5)
 
         except RuntimeError as e:
             print(f"Failed to fill the form: {e}")
+        
+        finally:
+            browser.close()
+
                     
                     
 
