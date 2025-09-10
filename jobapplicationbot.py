@@ -197,6 +197,17 @@ class JobApplicationBot:
             formFields = self.collectRequireField(dialogHtml)
             time.sleep(1)
 
+            # click automate filling by upload
+            page.get_by_text("Import resume from").click()
+            time.sleep(1)
+            with page.expect_file_chooser() as fc_info:
+                page.get_by_text("My computer").click()
+
+            file_chooser = fc_info.value
+            file_chooser.set_files(os.getenv("PDF_PATH"))
+
+            time.sleep(10)
+
             for i in range(len(formFields)):
                 label = formFields[i]["label"]
                 selector = formFields[i]["selector"]
