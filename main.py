@@ -24,8 +24,8 @@ def main():
     pw = sync_playwright().start()
 
     urls = [
-        "https://jobs.workable.com/view/nh3yzcd2jraDf2Ki7Gj2y7/customer-service-engineer-(system-administrator)-(esom)-in-lexington-at-kentro",
-        "https://jobs.workable.com/view/6WYWj7iSEUTdgMfJERMvTF/selling-assistant-manager-in-greensboro-at-1915-south-%2F-ashley",
+        # "https://jobs.workable.com/view/nh3yzcd2jraDf2Ki7Gj2y7/customer-service-engineer-(system-administrator)-(esom)-in-lexington-at-kentro",
+        # "https://jobs.workable.com/view/6WYWj7iSEUTdgMfJERMvTF/selling-assistant-manager-in-greensboro-at-1915-south-%2F-ashley",
         "https://jobs.workable.com/view/xi5U92QV4yBxjaHrwLZYcF/hybrid-senior-technical-lead---front-end-in-texas-at-qode"
     ]
 

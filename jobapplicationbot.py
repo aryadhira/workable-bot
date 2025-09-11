@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import time
 import os
 import re
+import requests
 
 class JobApplicationBot:
     def __init__(self, pw, url, headless, resume, llm):
@@ -174,10 +175,13 @@ class JobApplicationBot:
     def fillForm(self):
         browser = self.playwright.chromium.launch(
                 headless= self.headless,
-                slow_mo= 500
+                slow_mo= 1000
             )
         try:
-            page = browser.new_page()
+            solverAgent = os.getenv("BROWSER_AGENT")
+            context = browser.new_context(user_agent=solverAgent)
+            page = context.new_page()
+
             print(f'Navigating to {self.url} ...')
             page.goto(self.url)
 
@@ -192,6 +196,9 @@ class JobApplicationBot:
             print("Waiting Form to Load ...")
             time.sleep(5)
             dialogHtml = dialogContainer.inner_html()
+
+            content = page.content()            
+            siteKey = self.getTurnstileWidgetSiteKey(content)
 
             print("Populating All Required Fields ...")
             formFields = self.collectRequireField(dialogHtml)
@@ -279,14 +286,35 @@ class JobApplicationBot:
                     print(f"Answering: {label}")
                     page.locator(f"input{selector}").click()
 
-            print("Submit Application ...")
+            time.sleep(5)
+            token = self.solveCloudflareTurnstile(siteKey)
+            if siteKey:
+                current_token = page.evaluate("""() => {
+                    const input = document.querySelector('textarea[name="cf-turnstile-response"]');
+                    return input ? input.value : null;
+                }""")
+                
+                if not current_token or current_token != token:
+                    print("Token missing or changed, re-injecting...")
+                    self.inject_turnstile_token(page, token)
+
+            print("Submit Application...")
             page.locator("button[data-ui='apply-button']").click()
 
-            time.sleep(20)
+            # Wait for submission to complete
+            try:
+                page.wait_for_timeout(5000)
+                # Check for success message or error
+                success_indicator = page.locator("text=Application submitted") | page.locator("text=Thank you for applying")
+                if success_indicator.count() > 0:
+                    print("✅ Application submitted successfully!")
+                else:
+                    print("⚠️ Submission completed, but no success message detected")
+            except:
+                print("Submission completed")
 
-            content = page.content()
-            siteKey = self.getTurnstileWidgetSiteKey(content)
-            print(siteKey)
+            page.pause()
+           
 
         except RuntimeError as e:
             print(f"Failed to fill the form: {e}")
@@ -308,8 +336,130 @@ class JobApplicationBot:
                     break
         return siteKey
 
-                    
-                    
+    def solveCloudflareTurnstile(self, siteKey):
+        print('Solving Captcha...')
+        urlIn = os.getenv("SOLVE_CAPTCHA_IN_URL")
+        # urlRes = os.getenv("SOLVE_CAPTCHA_RES_URL")
+        apiKey = os.getenv("SOLVE_CAPTCHA_KEY")
+
+        payload = {
+            'key': apiKey,
+            'method': "turnstile",
+            'sitekey': siteKey,
+            'pageurl': self.url,
+            'json': "1"
+        }
+
+        files=[]
+        headers = {}
+
+        response = requests.request("POST", urlIn, headers=headers, data=payload, files=files)
+        resJson = response.json()
+
+        reqId = resJson["request"]
+
+        params = {
+            'key': apiKey,
+            'action': "get",
+            'id': reqId,
+            'json': 1
+        }
+
+        maxRetries = 10
+        res = None
+        for i in range(maxRetries):
+            res = self.getSolvedCaptcha(reqId)
+            if res["request"] == 'CAPCHA_NOT_READY':
+                time.sleep(10)
+            else:
+                break
+        
+        return res["request"]
+    
+    def getSolvedCaptcha(self, reqId):
+        urlRes = os.getenv("SOLVE_CAPTCHA_RES_URL")
+        apiKey = os.getenv("SOLVE_CAPTCHA_KEY")
+
+        params = {
+            'key': apiKey,
+            'action': "get",
+            'id': reqId,
+            'json': 1
+        }
+
+        solveResponse = requests.get(urlRes, params=params)
+        solveResJson = solveResponse.json()
+
+        return solveResJson              
+
+    def inject_turnstile_token(self, page, token: str):
+        if not token:
+            print("❌ No token provided for injection")
+            return False
+
+        print(f"🔧 Injecting Turnstile token: {token[:30]}...")
+        
+        # Method 1: Direct input field injection
+        try:
+            page.wait_for_selector('textarea[name="cf-turnstile-response"]', timeout=10000)
+            page.fill('textarea[name="cf-turnstile-response"]', token)
+            page.dispatch_event('textarea[name="cf-turnstile-response"]', 'change')
+            print("✅ Token injected via textarea")
+            return True
+        except Exception as e:
+            print(f"⚠️ Textarea injection failed: {e}")
+
+        # Method 2: Hidden input field
+        try:
+            page.wait_for_selector('input[name="cf-turnstile-response"]', timeout=5000)
+            page.fill('input[name="cf-turnstile-response"]', token)
+            page.dispatch_event('input[name="cf-turnstile-response"]', 'change')
+            print("✅ Token injected via input")
+            return True
+        except Exception as e:
+            print(f"⚠️ Input injection failed: {e}")
+
+        # Method 3: JavaScript evaluation
+        try:
+            page.evaluate(f"""() => {{
+                // Try to find and set the token value
+                const textarea = document.querySelector('textarea[name="cf-turnstile-response"]');
+                const input = document.querySelector('input[name="cf-turnstile-response"]');
+                
+                if (textarea) {{
+                    textarea.value = '{token}';
+                    textarea.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }} else if (input) {{
+                    input.value = '{token}';
+                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+                
+                // Also try to trigger Turnstile callback if exists
+                if (window.turnstile && typeof window.turnstileCallback === 'function') {{
+                    window.turnstileCallback('{token}');
+                }}
+            }}""")
+            print("✅ Token injected via JavaScript")
+            return True
+        except Exception as e:
+            print(f"⚠️ JavaScript injection failed: {e}")
+
+        # Method 4: Check iframe approach
+        try:
+            page.wait_for_selector('iframe[src*="challenges.cloudflare.com"]', timeout=10000)
+            iframe = page.frame_locator('iframe[src*="challenges.cloudflare.com"]')
+            textarea = iframe.locator('textarea[name="cf-turnstile-response"]')
+            textarea.wait_for(state="attached", timeout=5000)
+            textarea.fill(token)
+            textarea.dispatch_event("change")
+            print("✅ Token injected via iframe")
+            return True
+        except Exception as e:
+            print(f"⚠️ Iframe injection failed: {e}")
+
+        print("❌ All injection methods failed")
+        page.screenshot(path="turnstile_injection_failed.png")
+        return False           
 
 
 
