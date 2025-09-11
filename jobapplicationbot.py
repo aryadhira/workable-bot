@@ -173,9 +173,15 @@ class JobApplicationBot:
         return requireFields
     
     def fillForm(self):
+        proxy={
+            "server": os.getenv("PROXY_SERVER"),
+            "username":os.getenv("PROXY_USERNAME"),
+            "password":os.getenv("PROXY_PASSWORD")
+        }
         browser = self.playwright.chromium.launch(
                 headless= self.headless,
-                slow_mo= 1000
+                slow_mo= 1000,
+                proxy= proxy
             )
         try:
             solverAgent = os.getenv("BROWSER_AGENT")
@@ -287,33 +293,35 @@ class JobApplicationBot:
                     page.locator(f"input{selector}").click()
 
             time.sleep(5)
-            token = self.solveCloudflareTurnstile(siteKey)
-            if siteKey:
-                current_token = page.evaluate("""() => {
-                    const input = document.querySelector('textarea[name="cf-turnstile-response"]');
-                    return input ? input.value : null;
-                }""")
+            # token = self.solveCloudflareTurnstile(siteKey)
+            # if siteKey:
+            #     current_token = page.evaluate("""() => {
+            #         const input = document.querySelector('textarea[name="cf-turnstile-response"]');
+            #         return input ? input.value : null;
+            #     }""")
                 
-                if not current_token or current_token != token:
-                    print("Token missing or changed, re-injecting...")
-                    self.inject_turnstile_token(page, token)
+            #     if not current_token or current_token != token:
+            #         print("Token missing or changed, re-injecting...")
+            #         self.inject_turnstile_token(page, token)
 
             print("Submit Application...")
             page.locator("button[data-ui='apply-button']").click()
 
-            # Wait for submission to complete
-            try:
-                page.wait_for_timeout(5000)
-                # Check for success message or error
-                success_indicator = page.locator("text=Application submitted") | page.locator("text=Thank you for applying")
-                if success_indicator.count() > 0:
-                    print("✅ Application submitted successfully!")
-                else:
-                    print("⚠️ Submission completed, but no success message detected")
-            except:
-                print("Submission completed")
-
             page.pause()
+
+            # Wait for submission to complete
+            # try:
+            #     page.wait_for_timeout(5000)
+            #     # Check for success message or error
+            #     success_indicator = page.locator("text=Application submitted") | page.locator("text=Thank you for applying")
+            #     if success_indicator.count() > 0:
+            #         print("✅ Application submitted successfully!")
+            #     else:
+            #         print("⚠️ Submission completed, but no success message detected")
+            # except:
+            #     print("Submission completed")
+
+            # page.pause()
            
 
         except RuntimeError as e:
@@ -399,7 +407,6 @@ class JobApplicationBot:
 
         print(f"🔧 Injecting Turnstile token: {token[:30]}...")
         
-        # Method 1: Direct input field injection
         try:
             page.wait_for_selector('textarea[name="cf-turnstile-response"]', timeout=10000)
             page.fill('textarea[name="cf-turnstile-response"]', token)
@@ -409,7 +416,7 @@ class JobApplicationBot:
         except Exception as e:
             print(f"⚠️ Textarea injection failed: {e}")
 
-        # Method 2: Hidden input field
+
         try:
             page.wait_for_selector('input[name="cf-turnstile-response"]', timeout=5000)
             page.fill('input[name="cf-turnstile-response"]', token)
@@ -419,7 +426,7 @@ class JobApplicationBot:
         except Exception as e:
             print(f"⚠️ Input injection failed: {e}")
 
-        # Method 3: JavaScript evaluation
+
         try:
             page.evaluate(f"""() => {{
                 // Try to find and set the token value
@@ -444,7 +451,6 @@ class JobApplicationBot:
         except Exception as e:
             print(f"⚠️ JavaScript injection failed: {e}")
 
-        # Method 4: Check iframe approach
         try:
             page.wait_for_selector('iframe[src*="challenges.cloudflare.com"]', timeout=10000)
             iframe = page.frame_locator('iframe[src*="challenges.cloudflare.com"]')
