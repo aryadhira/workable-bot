@@ -2,11 +2,11 @@ from playwright.sync_api import Playwright
 from playwright_stealth import stealth
 from bs4 import BeautifulSoup
 import time
-import os
 import re
 import logging
 from utils.utils import Util
 import random
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -102,27 +102,28 @@ class JobBot:
 
         browser_agent = self.config["captcha"]["browser_agent"]
 
-        browser = self.playwright.start().chromium.launch(
+        browser = self.playwright.chromium.launch(
             headless = self.headless,
             # slow_mo= 1000,
-            # proxy= proxy
+            proxy= proxy
         )
-
-        random_delay = random.uniform(2000,4000)
 
         try:
             context = browser.new_context(user_agent=browser_agent)
             page = context.new_page()
 
-            stealth.Stealth().apply_stealth_async(page)
+            stealth.Stealth().apply_stealth_sync(page)
             
             logger.info(f'Navigating to {url} ...')
             page.goto(url)
+
+            page.wait_for_timeout(random.uniform(2000,4000))
 
             logger.info("Declining cookies ...")
             page.locator("button[data-ui='cookie-consent-accept']").click()
 
             page_root_source = page.content()
+            site_key = self.get_site_key(page_root_source)
 
             logger.info("Navigating to Job Application Form ...")
             page.locator("button[data-ui='overview-apply-now']").click()
@@ -136,10 +137,20 @@ class JobBot:
             logger.info("Populating All Required Fields ...")
             required_form_fields = self.get_required_field(form_dialog_source)
             page.wait_for_timeout(1000)
+
+            page.get_by_text("Import resume from").click()
+            page.wait_for_timeout(random.uniform(3000,5000))
+            with page.expect_file_chooser() as fc_info:
+                page.get_by_text("My computer").click()
+
+            file_chooser = fc_info.value
+            file_chooser.set_files(self.config["pdf"]["path"])
+            page.wait_for_timeout(random.uniform(10000,13000))
             page.mouse.wheel(0, 200)
 
             for i in range(len(required_form_fields)):
-                page.wait_for_timeout(random_delay)
+                page.mouse.wheel(0, 50)
+                page.wait_for_timeout(random.uniform(2000,4000))
                 label = required_form_fields[i]["label"]
                 selector = required_form_fields[i]["selector"]
                 input_type = required_form_fields[i]["input_type"]
@@ -198,6 +209,7 @@ class JobBot:
                         logger.info("Dial Phone Code Not Found")
 
                     page.locator("div[class='iti__selected-flag']").click()
+                    page.wait_for_timeout(random.uniform(3000,5000))
                     if country_code != "":
                         page.locator(f'li#iti-0__item-{country_code}').click()
                         phone_value = phone_number
@@ -205,7 +217,8 @@ class JobBot:
                         # dummy number if country code not found
                         page.locator('li#iti-0__item-us').click()
                         phone_value = "212-555-0125"
-                    
+
+                    page.wait_for_timeout(random.uniform(3000,5000))
                     page.locator(f"input{selector}").click()
                     Util.filling_mimic_human(page, f"input{selector}", phone_value)
 
@@ -222,14 +235,158 @@ class JobBot:
                     fieldset_selector = f"fieldset{selector}"
                     page.locator(fieldset_selector).get_by_role("radio", name=option_selector_name).click()
 
-            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            page.mouse.wheel(0, 300)
             page.wait_for_timeout(2000)
+            logger.info(f"site_key: {site_key}")
+            token = self.get_captcha_solver_token(url, site_key)
+            if token:
+                # First Trial
+                page.evaluate("""
+                    (token) => {
+                        let input = document.querySelector('input[name="cf-turnstile-response"]');
+                        if (!input) {
+                            input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'cf-turnstile-response';
+                            document.forms[0].appendChild(input);
+                        }
+                        input.value = token;
 
-            page.locator("button[data-ui='apply-button']").click()
+                        // Sometimes Turnstile also expects `#cf-challenge-response` for legacy forms
+                        let input2 = document.querySelector('#cf-challenge-response');
+                        if (input2) {
+                            input2.value = token;
+                        }
+                    }
+                """, token)
 
-            page.wait_for_timeout(15000)
+                # Second Trial
+                # page.evaluate("""
+                #     (token) => {
+                #         if (window.turnstile && window.turnstile.render) {
+                #             // Force resolve all widgets
+                #             document.querySelectorAll('.cf-turnstile').forEach(el => {
+                #                 window.turnstile.setResponse(el, token);
+                #             });
+                #         }
+                #     }
+                # """, token)
 
+                page.locator("button[data-ui='apply-button']").click()
 
-            
+            # Third Trial
+            while True:
+                # Wait for hidden input (means challenge is present)
+                try:
+                    page.wait_for_selector("input[name='cf-turnstile-response']",state="attached", timeout=20000)
+                except:
+                    logger.info("✅ No captcha detected")
+                    break
+
+                refresh_token = self.get_captcha_solver_token(url, site_key)
+                page.evaluate("""
+                    (token) => {
+                        document.querySelectorAll('input[name="cf-turnstile-response"]').forEach(input => {
+                            input.value = token;
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                        });
+                    }
+                """, refresh_token)
+
+                try:
+                    page.wait_for_selector("input[name='cf-turnstile-response']", timeout=5000)
+                    logger.info("⚠️ Challenge appeared again, reinjecting...")
+                    continue
+                except:
+                    logger.info("✅ Passed Turnstile")
+                    break
+
         except RuntimeError as e:
             logger.error(f"error applying job application: {e}")
+    
+    def inject_turnstile_token(self, token, page):
+        page.evaluate("""
+                    (token) => {
+                        let input = document.querySelector('input[name="cf-turnstile-response"]');
+                        if (!input) {
+                            input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'cf-turnstile-response';
+                            document.forms[0].appendChild(input);
+                        }
+                        input.value = token;
+
+                        // Sometimes Turnstile also expects `#cf-challenge-response` for legacy forms
+                        let input2 = document.querySelector('#cf-challenge-response');
+                        if (input2) {
+                            input2.value = token;
+                        }
+                    }
+                """, token)
+
+    def get_site_key(self, source):
+        soup = BeautifulSoup(source, 'html.parser')
+
+        res = soup.find_all("script")
+        site_key = None
+        for script in res:
+            if script.string:
+                match = re.search(r'"turnstileWidgetSiteKey"\s*:\s*"([^"]+)"', script.string)
+                if match:
+                    site_key = match.group(1)
+                    break
+        return site_key
+    
+    def get_captcha_solver_token(self, url, site_key):
+        logger.info("getting captcha solver token ...")
+        url_in = self.config["captcha"]["in_base_url"]
+        solver_api_key = self.config["captcha"]["api_key"]
+
+        payload = {
+            'key': solver_api_key,
+            'method': "turnstile",
+            'sitekey': site_key,
+            'pageurl': url,
+            'json': "1"
+        }
+
+        files=[]
+        headers = {}
+        try:
+            response = requests.request("POST", url_in, headers=headers, data=payload, files=files)
+            res_json = response.json()
+            req_id = res_json["request"]
+
+            max_retries = 10
+            res = None
+            for i in range(max_retries):
+                res = self.get_token(req_id)
+                if res["request"] == 'CAPCHA_NOT_READY':
+                    time.sleep(10)
+                else:
+                    break
+            
+            return res["request"]
+        
+        except RuntimeError as e:
+            logger.error(f"error calling solvecaptcha: {e}")
+    
+    def get_token(self, req_id):
+        url_res = self.config["captcha"]["res_base_url"]
+        solver_api_key = self.config["captcha"]["api_key"]
+
+        params = {
+            'key': solver_api_key,
+            'action': "get",
+            'id': req_id,
+            'json': 1
+        }
+
+        try:
+            solve_response = requests.get(url_res, params=params)
+            solve_res_json = solve_response.json()
+
+            return solve_res_json
+        
+        except RuntimeError as e:
+            logger.error(f"error get token from solvecaptcha: {e}")

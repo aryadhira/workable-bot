@@ -5,7 +5,8 @@ import time
 class Util:
 
     @staticmethod
-    def filling_mimic_human(page:Page, selector:str, value:str):        
+    def filling_mimic_human(page:Page, selector:str, value:str):       
+        page.locator(selector).fill("") 
         for i in value:
             page.keyboard.press(i)
             delay = random.uniform(0.05, 0.2)  
