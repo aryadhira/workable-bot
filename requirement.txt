@@ -1,5 +1,6 @@
 pdfplumber
 beautifulsoup4
-pytest-playwright
+playwright
 openai
 python-dotenv
+playwright-stealth
