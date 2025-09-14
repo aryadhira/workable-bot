@@ -4,3 +4,4 @@ playwright
 openai
 python-dotenv
 playwright-stealth
+requests

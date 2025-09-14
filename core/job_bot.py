@@ -105,14 +105,21 @@ class JobBot:
         browser = self.playwright.chromium.launch(
             headless = self.headless,
             # slow_mo= 1000,
-            proxy= proxy
+            # proxy= proxy,
         )
 
         try:
-            context = browser.new_context(user_agent=browser_agent)
+            context = browser.new_context(
+                 viewport={"width": 1280, "height": 800},
+                 storage_state="state.json",
+                 user_agent=browser_agent
+            )
+            context.add_init_script("""
+                delete Object.getPrototypeOf(navigator).webdriver;
+            """)
             page = context.new_page()
 
-            stealth.Stealth().apply_stealth_sync(page)
+            # stealth.Stealth().apply_stealth_sync(page)
             
             logger.info(f'Navigating to {url} ...')
             page.goto(url)
@@ -150,7 +157,7 @@ class JobBot:
 
             for i in range(len(required_form_fields)):
                 page.mouse.wheel(0, 50)
-                page.wait_for_timeout(random.uniform(2000,4000))
+                page.wait_for_timeout(random.uniform(4000,8000))
                 label = required_form_fields[i]["label"]
                 selector = required_form_fields[i]["selector"]
                 input_type = required_form_fields[i]["input_type"]
@@ -239,67 +246,26 @@ class JobBot:
             page.wait_for_timeout(2000)
             logger.info(f"site_key: {site_key}")
             token = self.get_captcha_solver_token(url, site_key)
-            if token:
-                # First Trial
-                page.evaluate("""
-                    (token) => {
-                        let input = document.querySelector('input[name="cf-turnstile-response"]');
-                        if (!input) {
-                            input = document.createElement('input');
-                            input.type = 'hidden';
-                            input.name = 'cf-turnstile-response';
-                            document.forms[0].appendChild(input);
-                        }
-                        input.value = token;
+            
+            self.inject_turnstile_token(token, page)
 
-                        // Sometimes Turnstile also expects `#cf-challenge-response` for legacy forms
-                        let input2 = document.querySelector('#cf-challenge-response');
-                        if (input2) {
-                            input2.value = token;
-                        }
-                    }
-                """, token)
+            page.locator("button[data-ui='apply-button']").click()
+            
+            page.wait_for_timeout(10000)
 
-                # Second Trial
-                # page.evaluate("""
-                #     (token) => {
-                #         if (window.turnstile && window.turnstile.render) {
-                #             // Force resolve all widgets
-                #             document.querySelectorAll('.cf-turnstile').forEach(el => {
-                #                 window.turnstile.setResponse(el, token);
-                #             });
-                #         }
-                #     }
-                # """, token)
-
-                page.locator("button[data-ui='apply-button']").click()
-
-            # Third Trial
-            while True:
-                # Wait for hidden input (means challenge is present)
-                try:
-                    page.wait_for_selector("input[name='cf-turnstile-response']",state="attached", timeout=20000)
+            for poll in range(3):
+                logger.info("waiting for the captcha input")
+                page.wait_for_timeout(5000)
+                try: 
+                    page.wait_for_selector('input[name="cf-turnstile-response"]',state="attached")
                 except:
-                    logger.info("✅ No captcha detected")
-                    break
-
-                refresh_token = self.get_captcha_solver_token(url, site_key)
-                page.evaluate("""
-                    (token) => {
-                        document.querySelectorAll('input[name="cf-turnstile-response"]').forEach(input => {
-                            input.value = token;
-                            input.dispatchEvent(new Event('change', { bubbles: true }));
-                        });
-                    }
-                """, refresh_token)
-
-                try:
-                    page.wait_for_selector("input[name='cf-turnstile-response']", timeout=5000)
-                    logger.info("⚠️ Challenge appeared again, reinjecting...")
+                    logger.info("captcha not detected")
                     continue
-                except:
-                    logger.info("✅ Passed Turnstile")
-                    break
+                
+                refresh_token = self.get_captcha_solver_token(url, site_key)
+                self.inject_turnstile_token(refresh_token, page)
+
+            page.pause()
 
         except RuntimeError as e:
             logger.error(f"error applying job application: {e}")
